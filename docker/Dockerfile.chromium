@@ -1,0 +1,40 @@
+# base container with all packages
+FROM node:18 AS base
+
+RUN apt-get update \
+    && apt-get update \
+    && apt-get install -y chromium fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-khmeros fonts-kacst fonts-freefont-ttf \
+      --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# build container that includes sources and tarballs
+FROM base AS builder
+
+COPY . /build
+
+WORKDIR /build
+
+RUN npm install wireit \
+    && npm run build --workspace puppeteer \
+    && docker/pack.sh
+
+
+# final container
+FROM base
+
+RUN groupadd -r pptruser && useradd -rm -g pptruser -G audio,video pptruser
+
+USER pptruser
+
+WORKDIR /home/pptruser
+
+COPY --from=builder /build/docker/puppeteer-browsers-latest.tgz /build/docker/puppeteer-latest.tgz /build/docker/puppeteer-core-latest.tgz ./
+
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Install @puppeteer/browsers, puppeteer and puppeteer-core into /home/pptruser/node_modules.
+RUN PUPPETEER_SKIP_DOWNLOAD=true npm i ./puppeteer-browsers-latest.tgz ./puppeteer-core-latest.tgz ./puppeteer-latest.tgz \
+    && rm ./puppeteer-browsers-latest.tgz ./puppeteer-core-latest.tgz ./puppeteer-latest.tgz
+
+CMD ["chromium"]
